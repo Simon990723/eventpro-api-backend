@@ -1,50 +1,119 @@
-# EventPro Platform - Backend API
+# EventPro API - Backend 🚀
 
-A full-stack, role-based event management platform built with .NET 9 and React 19, featuring an AI assistant and a transactional PDF invoicing system, deployed on AWS.
+This repository contains the backend API for the **EventPro Platform**. It is a robust and scalable .NET 8 application responsible for handling all business logic, data storage, and role-based user management. It serves as the backbone for the [EventPro Frontend](https://github.com/Simon990723/eventpro-api-frontend.git).
 
-**Note:** This is the backend API component. The corresponding frontend can be found at: `[LINK TO YOUR FRONTEND REPO WILL GO HERE]`
+**Live API URL**: `https://api.simon-eventpro.com` *(example URL)*
 
 ---
 
-## Key Features
+## 🔗 Corresponding Frontend
 
-*   **Secure, Role-Based Authentication & Authorization:** Built with ASP.NET Core Identity and JWTs for secure, stateless API communication.
-*   **Distinct User Roles ("Creator" vs. "User"):** Provides a tailored API experience with granular permissions, ensuring users can only access and manage their own data.
-*   **AI-Powered Content Generation:** Integrates with the Google Gemini API to provide an "AI Event Assistant" that can generate event details from a simple prompt.
-*   **Dynamic PDF Invoice/Receipt Generation:** A dedicated API endpoint that generates professional PDF documents on demand using the QuestPDF library, demonstrating experience with file stream-based responses.
-*   **Professional API Architecture:** Designed with a clean, scalable structure using Data Transfer Objects (DTOs) to prevent common serialization errors and ensure a secure and efficient data flow between the client and server.
+This API is designed to work with the official EventPro frontend application.
+*   **Frontend Repository**: [https://github.com/Simon990723/eventpro-api-frontend.git](https://github.com/Simon990723/eventpro-api-frontend.git)
 
-## Tech Stack
+---
 
-*   **Framework:** .NET 9, ASP.NET Core Web API
-*   **Database:** PostgreSQL
-*   **Object-Relational Mapper (ORM):** Entity Framework Core 9
-*   **Authentication:** ASP.NET Core Identity, JSON Web Tokens (JWT)
-*   **Document Generation:** QuestPDF
-*   **API Integration:** Google Gemini API (via HttpClient)
+## ✨ Key Features
 
-## Architectural Highlights & Challenges Solved
+- **🎭 Role-Based Access Control (RBAC)**: Secure authentication distinguishing between two main roles:
+    - **Event Creators**: Can create, manage, and delete their own events.
+    - **Normal Users (Attendees)**: Can browse events, purchase tickets, and manage their registrations.
+- **🛠️ Full Event Management for Creators**: Dedicated endpoints allowing Event Creators to perform complete CRUD (Create, Read, Update, Delete) operations for the events they own.
+- **🤖 AI-Powered Content Generation**: Integrates with a **Google AI service**, providing an exclusive feature for Event Creators to automatically generate compelling event descriptions and details.
+- **🎟️ Ticketing and Invoicing**: Allows Normal Users to purchase tickets for events and download PDF invoices for their records.
+- **🔐 Secure JWT Authentication**: Protects API endpoints using JSON Web Tokens (JWT), ensuring that users can only access resources appropriate for their assigned role.
+- **📦 Containerized & Scalable**: Fully configured to run within Docker and deployed on AWS App Runner for high availability and scalability.
 
-### 1. The DTO Pattern for API Security and Stability
+---
 
-*   **Challenge:** A classic challenge in APIs with related data is the "infinite loop" during JSON serialization (e.g., an `Event` has `Registrants`, and a `Registrant` has an `Event`).
-*   **Solution:** I solved this by implementing the professional **Data Transfer Object (DTO)** pattern. Instead of returning raw database models, the API endpoints return clean, simple DTOs (like `RegistrantResponseDto`) that contain only the necessary data and have no circular references. This makes the API more secure, more efficient, and prevents critical runtime crashes.
+## 💻 Tech Stack
 
-### 2. Role-Based Access Control (RBAC)
+- **Framework**: .NET 8
+- **Language**: C#
+- **API Style**: RESTful API
+- **Database**: PostgreSQL 🐘
+- **ORM**: Entity Framework Core
+- **Authentication**: ASP.NET Core Identity with JWT Bearer Tokens
+- **AI Integration**: Google AI SDK
+- **Containerization**: Docker 🐳
 
-*   **Challenge:** The application required two different user experiences: a management dashboard for "Creators" and a public discovery platform for "Users".
-*   **Solution:** I implemented a full RBAC system using ASP.NET Core Identity Roles. API endpoints are secured with `[Authorize]` attributes, and the logic within each endpoint is further secured to check for ownership (`e.g., event.UserId == currentUserId`), ensuring that a user can never access or modify data that does not belong to them.
+---
 
-## Setup & How to Run Locally
+## 📚 API Documentation
 
-1.  **Clone the repository:** `git clone [your-repo-url]`
-2.  **Configure User Secrets:**
-    *   Navigate to the `EventProRegistration` project folder.
-    *   Initialize user secrets: `dotnet user-secrets init`
-    *   Set your Google API Key: `dotnet user-secrets set "GoogleApiKey" "YOUR_GOOGLE_API_KEY"`
-3.  **Configure Database Connection:**
-    *   In `appsettings.Development.json`, update the `DefaultConnection` string with your local PostgreSQL credentials.
-4.  **Apply Migrations:**
-    *   Run `dotnet ef database update` to create the database and apply the schema.
-5.  **Run the project:**
-    *   Run the application from your IDE or with `dotnet run`. The API will be available at `http://localhost:5189`.
+The API is self-documenting using **Swagger (OpenAPI)**. When the application is running locally, you can access the interactive Swagger UI to view and test all available endpoints, including those protected by authentication.
+
+*   **Swagger UI URL**: `http://localhost:5189/swagger`
+
+---
+
+## 🚀 Getting Started
+
+Follow these instructions to get the backend server up and running on your local machine.
+
+### Prerequisites
+
+- .NET 8 SDK
+- Docker Desktop (Recommended)
+- A PostgreSQL instance
+- An IDE like Visual Studio 2022 or VS Code
+
+### Installation
+
+1.  Clone the repository:
+    ```sh
+    git clone [your-backend-repo-url]
+    ```
+2.  Navigate to the project directory:
+    ```sh
+    cd eventpro-api-backend 
+    ```
+3.  Configure your local secrets. Initialize it first:
+    ```sh
+    dotnet user-secrets init
+    ```
+4.  Set your configuration values. You will need the database connection string, JWT settings, and your Google AI API Key:
+    ```sh
+    dotnet user-secrets set "ConnectionStrings:DefaultConnection" "Host=localhost;Port=5432;Database=eventpro_db;Username=postgres;Password=yourpassword"
+    dotnet user-secrets set "JwtSettings:Key" "A_SUPER_SECRET_AND_LONG_KEY_FOR_JWT_SIGNING"
+    dotnet user-secrets set "JwtSettings:Issuer" "EventProAPI"
+    dotnet user-secrets set "JwtSettings:Audience" "EventProClient"
+    dotnet user-secrets set "GoogleAi:ApiKey" "YOUR_GOOGLE_AI_API_KEY"
+    ```
+5.  Apply the database migrations to create the schema:
+    ```sh
+    dotnet ef database update
+    ```
+6.  Run the application:
+    ```sh
+    dotnet run
+    ```
+The API will now be running at `http://localhost:5189`.
+
+---
+
+### 🐳 Running with Docker
+
+A `docker-compose.yml` file is included for easily running the entire backend stack (API + Database).
+
+1.  Ensure Docker Desktop is running.
+2.  Create a `.env` file in the root directory and add your Google AI API key:
+    ```
+    GOOGLE_AI_API_KEY=YOUR_GOOGLE_AI_API_KEY
+    ```
+3.  From the root of the project directory, run:
+    ```sh
+    docker-compose up --build
+    ```
+This command will build the API's Docker image, inject the environment variables, and start both the API and a PostgreSQL container.
+
+---
+
+## ☁️ Deployment
+
+This API is designed for containerized deployments and is currently running on **AWS App Runner**.
+
+The CI/CD pipeline is configured to:
+1.  Build a new Docker image upon every push to the `main` branch.
+2.  Push the image to **Amazon ECR (Elastic Container Registry)**.
+3.  Trigger a new deployment on **AWS App Runner**, which pulls the latest image and updates the service with zero downtime. Environment variables for production are securely managed in the App Runner service configuration.
