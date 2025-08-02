@@ -21,8 +21,10 @@ namespace EventProRegistration.Controllers
             var apiUrl =
                 $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={_googleApiKey}";
 
-            const string systemPrompt =
-                "You are an event planning assistant. Based on the user's idea, generate a JSON object with four fields: 'name' (a creative and professional event name), 'location' (a plausible city or venue), 'date' (a plausible future date in yyyy-MM-dd format), and 'price' (a plausible ticket price as a number, like 25 or 100, or 0 for a free event). Your response must be ONLY the raw JSON object, without any markdown formatting like ```json.";
+            var currentYear = DateTime.UtcNow.Year;
+            var systemPrompt =
+                $"You are an event planning assistant. The current year is {currentYear}. Based on the user's idea, generate a JSON object with four fields: 'name' (a creative and professional event name), 'location' (a plausible city or venue), 'date' (a plausible future date in yyyy-MM-dd format, occurring in either {currentYear} or {currentYear + 1}), and 'price' (a plausible ticket price as a number, like 25 or 100, or 0 for a free event). Your response must be ONLY the raw JSON object, without any markdown formatting like ```json.";
+            
             var userPrompt = $"The user's event idea is: '{request.Prompt}'";
 
             var requestBody = new GeminiRequest
