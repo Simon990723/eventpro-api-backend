@@ -2,7 +2,7 @@
 
 This repository contains the backend API for the **EventPro Platform**. It is a robust and scalable .NET 8 application responsible for handling all business logic, data storage, and role-based user management. It serves as the backbone for the [EventPro Frontend](https://github.com/Simon990723/eventpro-api-frontend.git).
 
-**Live API URL**: `https://api.simon-eventpro.com` *(example URL)*
+**Live API URL**: `[https://api.simon-eventpro.com](https://simon-eventpro.com/)` 
 
 ---
 
@@ -28,7 +28,7 @@ This API is designed to work with the official EventPro frontend application.
 
 ## 💻 Tech Stack
 
-- **Framework**: .NET 8
+- **Framework**: .NET 9
 - **Language**: C#
 - **API Style**: RESTful API
 - **Database**: PostgreSQL 🐘
@@ -53,7 +53,7 @@ Follow these instructions to get the backend server up and running on your local
 
 ### Prerequisites
 
-- .NET 8 SDK
+- .NET 9 SDK
 - Docker Desktop (Recommended)
 - A PostgreSQL instance
 - An IDE like Visual Studio 2022 or VS Code
