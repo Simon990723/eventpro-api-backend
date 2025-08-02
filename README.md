@@ -2,7 +2,7 @@
 
 This repository contains the backend API for the **EventPro Platform**. It is a robust and scalable .NET 8 application responsible for handling all business logic, data storage, and role-based user management. It serves as the backbone for the [EventPro Frontend](https://github.com/Simon990723/eventpro-api-frontend.git).
 
-**Live API URL**: `[https://api.simon-eventpro.com](https://simon-eventpro.com/)` 
+**Live API URL**: https://simon-eventpro.com
 
 ---
 
