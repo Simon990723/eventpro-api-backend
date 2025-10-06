@@ -2,17 +2,17 @@ name: Deploy Backend to GCP
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
 
 env:
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-  GAR_LOCATION: asia-southeast1
-  SERVICE_NAME: eventpro-backend
-  REPOSITORY_NAME: eventpro-backend
+  # ---- GCP / service config ----
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}          
+  REGION: asia-southeast1                                # Cloud Run region
+  GAR_LOCATION: asia-southeast1                          # Artifact Registry location
+  REPOSITORY_NAME: eventpro-repo                         # your Artifact Registry repo
+  SERVICE_NAME: eventpro-backend                         # Cloud Run service name
 
 jobs:
   build-and-deploy:
@@ -20,35 +20,59 @@ jobs:
     runs-on: ubuntu-latest
 
     permissions:
-      contents: 'read'
-      id-token: 'write'
+      contents: read
+      id-token: write
+
+    concurrency:
+      group: deploy-${{ github.ref }}
+      cancel-in-progress: true
 
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        id: auth
-        uses: 'google-github-actions/auth@v2'
+      # --- Keyless auth via Workload Identity Federation ---
+      - name: Authenticate to Google Cloud (WIF)
+        uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Configure Docker
-        run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
 
-      - name: Build and Push Docker Image
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+
+      - name: Compute image name
         run: |
-          docker build -t ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
-          docker push ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          echo "IMAGE=${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPOSITORY_NAME}/${SERVICE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
 
+      # Build & push container (publish w/o analyzers to unblock CI)
+      - name: Build and Push Docker image
+        run: |
+          docker build -t "$IMAGE" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 .
+          docker push "$IMAGE"
+
+      # Deploy to Cloud Run and inject GCP Secret Manager values as env vars
       - name: Deploy to Cloud Run
-        id: deploy
-        uses: 'google-github-actions/deploy-cloud-run@v2'
-        with:
-          service: ${{ env.SERVICE_NAME }}
-          region: ${{ env.GAR_LOCATION }}
-          image: ${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPOSITORY_NAME }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
-          
-      - name: Output Cloud Run URL
-        run: echo "Cloud Run URL: ${{ steps.deploy.outputs.url }}"
+        run: |
+          gcloud run deploy "$SERVICE_NAME" \
+            --project "$GCP_PROJECT_ID" \
+            --region "$REGION" \
+            --platform managed \
+            --image "$IMAGE" \
+            --port 8080 \
+            --set-secrets=ConnectionStrings__DefaultConnection=eventpro-db-connection-string:latest \
+            --set-secrets=JwtSettings__Key=eventpro-jwt-key:latest \
+            --set-secrets=GoogleAi__ApiKey=eventpro-google-ai-key:latest \
+            --quiet
+          # add --allow-unauthenticated if your service is public
+
+      - name: Show service URL
+        run: |
+          URL="$(gcloud run services describe "$SERVICE_NAME" \
+                --project "$GCP_PROJECT_ID" --region "$REGION" \
+                --format='value(status.url)')"
+          echo "Cloud Run URL: $URL"
