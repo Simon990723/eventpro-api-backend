@@ -7,12 +7,12 @@ on:
     branches: [ "main" ]
 
 env:
-  # ---- GCP config (adjust only if your infra names change) ----
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}                # e.g. event-pro-473112
-  REGION: asia-southeast1                                      # Cloud Run region
-  GAR_LOCATION: asia-southeast1                                # Artifact Registry location
-  REPOSITORY_NAME: eventpro-repo                               # <- your AR repo from logs
-  SERVICE_NAME: eventpro-backend                               # Cloud Run service name
+  # ---- GCP / service config ----
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}          
+  REGION: asia-southeast1                                # Cloud Run region
+  GAR_LOCATION: asia-southeast1                          # Artifact Registry location
+  REPOSITORY_NAME: eventpro-repo                         # your Artifact Registry repo
+  SERVICE_NAME: eventpro-backend                         # Cloud Run service name
 
 jobs:
   build-and-deploy:
@@ -41,26 +41,21 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
-      # Optional: show the active account to verify OIDC impersonation worked
-      - name: Who am I
-        run: gcloud auth list
-
-      # Configure Docker to push to Artifact Registry
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
 
-      # Compose image name once and export to env
       - name: Compute image name
         run: |
           echo "IMAGE=${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPOSITORY_NAME}/${SERVICE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
 
-      # Build and push
+      # Build & push container (publish w/o analyzers to unblock CI)
       - name: Build and Push Docker image
         run: |
-          docker build -t "$IMAGE" .
+          docker build -t "$IMAGE" \
+            --build-arg BUILDKIT_INLINE_CACHE=1 .
           docker push "$IMAGE"
 
-      # Deploy via gcloud (no action outputs; avoids YAML quoting issues)
+      # Deploy to Cloud Run and inject GCP Secret Manager values as env vars
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE_NAME" \
@@ -69,9 +64,12 @@ jobs:
             --platform managed \
             --image "$IMAGE" \
             --port 8080 \
+            --set-secrets=ConnectionStrings__DefaultConnection=eventpro-db-connection-string:latest \
+            --set-secrets=JwtSettings__Key=eventpro-jwt-key:latest \
+            --set-secrets=GoogleAi__ApiKey=eventpro-google-ai-key:latest \
             --quiet
+          # add --allow-unauthenticated if your service is public
 
-      # Print the URL deterministically
       - name: Show service URL
         run: |
           URL="$(gcloud run services describe "$SERVICE_NAME" \
