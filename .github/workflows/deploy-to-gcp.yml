@@ -1,78 +1,63 @@
-name: Deploy Backend to GCP
+name: Deploy to Cloud Run
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  workflow_dispatch:
 
 env:
-  # ---- GCP / service config ----
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}          
-  REGION: asia-southeast1                                # Cloud Run region
-  GAR_LOCATION: asia-southeast1                          # Artifact Registry location
-  REPOSITORY_NAME: eventpro-repo                         # your Artifact Registry repo
-  SERVICE_NAME: eventpro-backend                         # Cloud Run service name
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  REPO: ${{ secrets.GCP_ARTIFACT_REPO }}
+  SERVICE: ${{ secrets.GCP_SERVICE_NAME }}
+  IMAGE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_ARTIFACT_REPO }}/${{ secrets.GCP_SERVICE_NAME }}:${{ github.sha }}
 
 jobs:
-  build-and-deploy:
-    name: Build and Deploy
+  deploy:
+    name: Build → Push → Deploy
     runs-on: ubuntu-latest
-
     permissions:
       contents: read
-      id-token: write
-
-    concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
-
+      id-token: write  # OIDC
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      # --- Keyless auth via Workload Identity Federation ---
-      - name: Authenticate to Google Cloud (WIF)
+      - name: Authenticate to Google Cloud (OIDC)
         uses: google-github-actions/auth@v2
         with:
+          token_format: access_token
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Setup gcloud
+      - name: Configure gcloud
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+      - name: Configure Docker to use Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Compute image name
+      - name: Build container
         run: |
-          echo "IMAGE=${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPOSITORY_NAME}/${SERVICE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          docker build \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            -t "${IMAGE}" \
+            -f ./Dockerfile .
 
-      # Build & push container (publish w/o analyzers to unblock CI)
-      - name: Build and Push Docker image
+      - name: Push to Artifact Registry
+        run: docker push "${IMAGE}"
+
+      - name: Enable required APIs (idempotent)
         run: |
-          docker build -t "$IMAGE" \
-            --build-arg BUILDKIT_INLINE_CACHE=1 .
-          docker push "$IMAGE"
+          gcloud services enable run.googleapis.com artifactregistry.googleapis.com --quiet
 
-      # Deploy to Cloud Run and inject GCP Secret Manager values as env vars
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy "$SERVICE_NAME" \
-            --project "$GCP_PROJECT_ID" \
-            --region "$REGION" \
+          gcloud run deploy "${SERVICE}" \
+            --image "${IMAGE}" \
+            --region "${REGION}" \
             --platform managed \
-            --image "$IMAGE" \
+            --allow-unauthenticated \
             --port 8080 \
-            --set-secrets=ConnectionStrings__DefaultConnection=eventpro-db-connection-string:latest \
-            --set-secrets=JwtSettings__Key=eventpro-jwt-key:latest \
-            --set-secrets=GoogleAi__ApiKey=eventpro-google-ai-key:latest \
-            --quiet
-          # add --allow-unauthenticated if your service is public
-
-      - name: Show service URL
-        run: |
-          URL="$(gcloud run services describe "$SERVICE_NAME" \
-                --project "$GCP_PROJECT_ID" --region "$REGION" \
-                --format='value(status.url)')"
-          echo "Cloud Run URL: $URL"
+            --set-env-vars ASPNETCORE_URLS=http://+:8080
