@@ -2,22 +2,19 @@ name: Deploy to Cloud Run
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ "main" ]
 
 permissions:
   contents: read
   id-token: write
 
 env:
-  PROJECT_ID: event-pro-473112
-  REGION: asia-southeast1
-  REPO: eventpro-repo
-  SERVICE: eventpro-backend
+  GCP_PROJECT_ID: event-pro-473112
+  GCP_REGION: asia-southeast1
+  AR_REPO: eventpro-repo
+  SERVICE_NAME: eventpro-backend
 
-concurrency:
-  group: cloud-run-deploy
-  cancel-in-progress: true
+  IMAGE: asia-southeast1-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
 
 jobs:
   build-and-deploy:
@@ -27,57 +24,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Debug repo context
-        run: |
-          echo "GITHUB_REPOSITORY=${GITHUB_REPOSITORY}"
-          echo "GITHUB_REF_NAME=${GITHUB_REF_NAME}"
-
-      - id: auth
-        name: Authenticate to Google Cloud
+      - name: Auth to Google Cloud (workload identity)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/446938054709/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: github-actions-deployer@event-pro-473112.iam.gserviceaccount.com
+          token_format: access_token
 
-      - name: Setup gcloud
+      - name: Set up gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
-          version: '>= 486.0.0'
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-      - name: Configure Artifact Registry Docker auth
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+      - name: Configure Docker to use gcloud as a credential helper
+        run: gcloud auth configure-docker asia-southeast1-docker.pkg.dev --quiet
 
-      - name: Compute image tag
-        id: vars
+      - name: Build image
         run: |
-          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO }}/${{ env.SERVICE }}:${GITHUB_SHA}"
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          docker build -t "${IMAGE}" .
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.vars.outputs.image }}
-          cache-to: type=inline
+      - name: Push image to Artifact Registry
+        run: |
+          docker push "${IMAGE}"
 
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy ${{ env.SERVICE }} \
-            --image ${{ steps.vars.outputs.image }} \
-            --region ${{ env.REGION }} \
-            --project ${{ env.PROJECT_ID }} \
-            --platform=managed \
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --project ${{ env.GCP_PROJECT_ID }} \
+            --region ${{ env.GCP_REGION }} \
+            --image "${IMAGE}" \
+            --platform managed \
             --allow-unauthenticated \
-            --port=8080 \
-            --quiet
-
-      - name: Show service URL
-        run: |
-          gcloud run services describe ${{ env.SERVICE }} \
-            --region ${{ env.REGION }} \
-            --format='value(status.url)'
+            --port 8080
