@@ -18,10 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write  # OIDC
+      id-token: write  # needed for OIDC
+
     steps:
       - name: Checkout
-      - uses: actions/checkout@v4
+        uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud (OIDC)
         uses: google-github-actions/auth@v2
@@ -30,27 +31,26 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
-      - name: Configure gcloud
+      - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ env.PROJECT_ID }}
 
-      - name: Configure Docker to use Artifact Registry
+      - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Build container
+      - name: Build image
         run: |
           docker build \
             --build-arg BUILDKIT_INLINE_CACHE=1 \
             -t "${IMAGE}" \
             -f ./Dockerfile .
 
-      - name: Push to Artifact Registry
+      - name: Push image
         run: docker push "${IMAGE}"
 
-      - name: Enable required APIs (idempotent)
-        run: |
-          gcloud services enable run.googleapis.com artifactregistry.googleapis.com --quiet
+      - name: Ensure required APIs (idempotent)
+        run: gcloud services enable run.googleapis.com artifactregistry.googleapis.com --quiet
 
       - name: Deploy to Cloud Run
         run: |
