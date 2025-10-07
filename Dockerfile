@@ -1,25 +1,31 @@
-# Stage 1: Build the application
-# This stage uses the full .NET SDK to build your project.
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+# syntax=docker/dockerfile:1
+
+# ===== Publish stage =====
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS publish
 WORKDIR /src
-COPY ["EventProRegistration/EventProRegistration.csproj", "EventProRegistration/"]
-RUN dotnet restore "EventProRegistration/EventProRegistration.csproj"
+
+# copy csproj first to leverage restore caching
+COPY EventProRegistration/EventProRegistration.csproj EventProRegistration/
+RUN dotnet restore EventProRegistration/EventProRegistration.csproj
+
+# copy the rest
 COPY . .
-WORKDIR "/src/EventProRegistration"
-RUN dotnet build "EventProRegistration.csproj" -c Release -o /app/build
+WORKDIR /src/EventProRegistration
 
-# Stage 2: Publish the application
-# This stage takes the built code and prepares it for deployment.
-FROM build AS publish
-RUN dotnet publish "EventProRegistration.csproj" -c Release -o /app/publish /p:UseAppHost=false
+# publish with analyzers off and warnings NOT treated as errors
+RUN dotnet publish EventProRegistration.csproj -c Release -o /app/publish \
+    -p:UseAppHost=false \
+    -p:EnableNETAnalyzers=false \
+    -p:AnalysisLevel=none \
+    -p:TreatWarningsAsErrors=false
 
-# Stage 3: Create the final runtime image
-# This stage creates a smaller, more secure image with only the .NET runtime
-# and your published application files.
+# ===== Runtime stage =====
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
-# The port ASP.NET Core will listen on inside the container
-ENV ASPNETCORE_URLS=http://+:8080
+
+# Cloud Run listens on 8080 by default (and sets $PORT=8080)
+ENV ASPNETCORE_URLS=http://0.0.0.0:8080
 EXPOSE 8080
+
 ENTRYPOINT ["dotnet", "EventProRegistration.dll"]

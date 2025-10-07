@@ -1,78 +1,57 @@
-name: Deploy Backend to GCP
+name: Deploy to Cloud Run
 
 on:
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+
+permissions:
+  contents: read
+  id-token: write
 
 env:
-  # ---- GCP / service config ----
-  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}          
-  REGION: asia-southeast1                                # Cloud Run region
-  GAR_LOCATION: asia-southeast1                          # Artifact Registry location
-  REPOSITORY_NAME: eventpro-repo                         # your Artifact Registry repo
-  SERVICE_NAME: eventpro-backend                         # Cloud Run service name
+  GCP_PROJECT_ID: event-pro-473112
+  GCP_REGION: asia-southeast1
+  AR_REPO: eventpro-repo
+  SERVICE_NAME: eventpro-backend
 
 jobs:
   build-and-deploy:
-    name: Build and Deploy
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      id-token: write
-
-    concurrency:
-      group: deploy-${{ github.ref }}
-      cancel-in-progress: true
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # --- Keyless auth via Workload Identity Federation ---
-      - name: Authenticate to Google Cloud (WIF)
+      - name: Compute IMAGE tag
+        run: echo "IMAGE=asia-southeast1-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/${SERVICE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Auth to Google Cloud (Workload Identity)
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          workload_identity_provider: projects/446938054709/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: github-actions-deployer@event-pro-473112.iam.gserviceaccount.com
+          token_format: access_token
 
-      - name: Setup gcloud
+      - name: Set up gcloud SDK
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
 
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker "${GAR_LOCATION}-docker.pkg.dev" --quiet
+      - name: Configure Docker to use gcloud as a credential helper
+        run: gcloud auth configure-docker asia-southeast1-docker.pkg.dev --quiet
 
-      - name: Compute image name
-        run: |
-          echo "IMAGE=${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${REPOSITORY_NAME}/${SERVICE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+      - name: Build Docker image
+        run: docker build -t "$IMAGE" .
 
-      # Build & push container (publish w/o analyzers to unblock CI)
-      - name: Build and Push Docker image
-        run: |
-          docker build -t "$IMAGE" \
-            --build-arg BUILDKIT_INLINE_CACHE=1 .
-          docker push "$IMAGE"
+      - name: Push image to Artifact Registry
+        run: docker push "$IMAGE"
 
-      # Deploy to Cloud Run and inject GCP Secret Manager values as env vars
       - name: Deploy to Cloud Run
         run: |
-          gcloud run deploy "$SERVICE_NAME" \
-            --project "$GCP_PROJECT_ID" \
-            --region "$REGION" \
-            --platform managed \
+          gcloud run deploy "${SERVICE_NAME}" \
+            --project "${GCP_PROJECT_ID}" \
+            --region "${GCP_REGION}" \
             --image "$IMAGE" \
-            --port 8080 \
-            --set-secrets=ConnectionStrings__DefaultConnection=eventpro-db-connection-string:latest \
-            --set-secrets=JwtSettings__Key=eventpro-jwt-key:latest \
-            --set-secrets=GoogleAi__ApiKey=eventpro-google-ai-key:latest \
-            --quiet
-          # add --allow-unauthenticated if your service is public
-
-      - name: Show service URL
-        run: |
-          URL="$(gcloud run services describe "$SERVICE_NAME" \
-                --project "$GCP_PROJECT_ID" --region "$REGION" \
-                --format='value(status.url)')"
-          echo "Cloud Run URL: $URL"
+            --platform managed \
+            --allow-unauthenticated \
+            --port 8080
